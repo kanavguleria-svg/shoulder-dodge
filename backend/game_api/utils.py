@@ -30,3 +30,17 @@ def format_config(config_obj):
         'lives_max': config_obj.lives_max,
     }
 
+
+def format_duration(seconds):
+    """Format duration in seconds to a human-readable string."""
+    seconds = int(round(seconds))
+    mins, secs = divmod(seconds, 60)
+    hours, mins = divmod(mins, 60)
+    if hours > 0:
+        return f"{hours}h {mins}m {secs}s"
+    elif mins > 0:
+        return f"{mins}m {secs}s"
+    else:
+        return f"{secs}s"
+
+

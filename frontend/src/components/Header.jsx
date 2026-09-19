@@ -9,7 +9,7 @@ export function Header({ backendStatus, onOpenLeaderboard }) {
       <div className="nav-actions">
         <div className={`backend-badge ${isHealthy ? 'connected' : 'offline'}`} title={backendStatus?.message || 'Connecting...'}>
           <span style={{ fontSize: '8px' }}>●</span>
-          <span>{isHealthy ? 'Django Connected' : 'Django Offline'}</span>
+          <span>{isHealthy ? 'Connected' : 'Offline'}</span>
         </div>
         <button
           className="btn-action btn-secondary"

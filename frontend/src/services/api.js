@@ -56,3 +56,76 @@ export async function fetchGameConfig() {
   }
 }
 
+// ----------------------------------------------------
+// Telemetry & Metrics Tracking
+// ----------------------------------------------------
+export function getOrCreateSessionId() {
+  try {
+    let id = localStorage.getItem('dodge_session_id');
+    if (!id) {
+      id = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : 'sess_' + Math.random().toString(36).substring(2, 15) + Date.now();
+      localStorage.setItem('dodge_session_id', id);
+    }
+    return id;
+  } catch (e) {
+    return 'sess_fallback_' + Date.now();
+  }
+}
+
+export async function trackMetric(action, extra = {}, isUnload = false) {
+  const sessionId = getOrCreateSessionId();
+  const payload = JSON.stringify({
+    session_id: sessionId,
+    action,
+    ...extra,
+  });
+
+  const url = `${API_BASE_URL}/metrics/track/`;
+
+  if (isUnload && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+    const blob = new Blob([payload], { type: 'application/json' });
+    navigator.sendBeacon(url, blob);
+    return;
+  }
+
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+      keepalive: isUnload,
+    });
+  } catch (err) {
+    // Non-intrusive logging for telemetry errors
+    console.debug('Telemetry error:', err.message);
+  }
+}
+
+export function trackVisit() {
+  return trackMetric('visit');
+}
+
+export function trackRetry() {
+  return trackMetric('retry');
+}
+
+export function trackTimeSpent(seconds, isUnload = false) {
+  if (seconds > 0) {
+    return trackMetric('time_spent', { seconds }, isUnload);
+  }
+}
+
+export async function fetchMetrics() {
+  try {
+    const res = await fetch(`${API_BASE_URL}/metrics/`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error('Error fetching metrics:', err);
+    return null;
+  }
+}
+
+

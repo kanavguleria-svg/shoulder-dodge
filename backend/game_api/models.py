@@ -27,3 +27,18 @@ class GameConfig(models.Model):
 
     def __str__(self):
         return f"Config: {self.name} (Active: {self.is_active})"
+
+
+class SiteMetricSession(models.Model):
+    session_id = models.CharField(max_length=64, unique=True)
+    retries = models.PositiveIntegerField(default=0)
+    time_spent_seconds = models.FloatField(default=0.0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"Session {self.session_id}: {self.retries} retries, {self.time_spent_seconds:.1f}s"
+

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { submitScore } from '../services/api';
+import { submitScore, trackRetry } from '../services/api';
 
 export function Overlays({
   gameRunning,
@@ -32,8 +32,10 @@ export function Overlays({
 
   const handleRestart = () => {
     setSubmitted(false);
+    trackRetry();
     onStartGame();
   };
+
 
   // Start Screen Overlay
   if (!gameRunning && !gameOver) {

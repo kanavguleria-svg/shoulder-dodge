@@ -6,5 +6,8 @@ urlpatterns = [
     path('leaderboard/', views.leaderboard_view, name='leaderboard'),
     path('scores/', views.submit_score_view, name='submit_score'),
     path('config/', views.game_config_view, name='game_config'),
+    path('metrics/', views.metrics_summary_view, name='metrics_summary'),
+    path('metrics/track/', views.track_metric_event_view, name='track_metric'),
 ]
+
 

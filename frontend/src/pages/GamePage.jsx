@@ -10,7 +10,7 @@ import { LeaderboardModal } from '../components/LeaderboardModal';
 import { useCamera } from '../hooks/useCamera';
 import { useMoveNet } from '../hooks/useMoveNet';
 import { useGameEngine } from '../hooks/useGameEngine';
-import { checkBackendHealth } from '../services/api';
+import { checkBackendHealth, trackVisit, trackTimeSpent } from '../services/api';
 
 export function GamePage() {
   const [backendStatus, setBackendStatus] = useState(null);
@@ -38,6 +38,49 @@ export function GamePage() {
       setBackendStatus(status);
     });
   }, []);
+
+  // Telemetry: track visit and active time spent on the page
+  useEffect(() => {
+    trackVisit();
+
+    let lastPing = Date.now();
+
+    const flushTimeSpent = (isUnload = false) => {
+      const now = Date.now();
+      const elapsedSeconds = Math.round((now - lastPing) / 1000);
+      if (elapsedSeconds >= 1) {
+        trackTimeSpent(elapsedSeconds, isUnload);
+        lastPing = now;
+      }
+    };
+
+    // Heartbeat every 15 seconds
+    const intervalId = setInterval(() => {
+      flushTimeSpent(false);
+    }, 15000);
+
+    const handleVisibilityOrUnload = () => {
+      flushTimeSpent(true);
+    };
+
+    window.addEventListener('beforeunload', handleVisibilityOrUnload);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushTimeSpent(true);
+      } else {
+        lastPing = Date.now();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('beforeunload', handleVisibilityOrUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      flushTimeSpent(true);
+    };
+  }, []);
+
 
   return (
     <div className="game-container">
