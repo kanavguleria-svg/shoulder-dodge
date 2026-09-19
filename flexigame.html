@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shoulder Dodge — MoveNet</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0a0f;
+      color: #fff;
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: #00e5ff;
+      margin-bottom: 10px;
+      text-shadow: 0 0 12px #00e5ff88;
+    }
+
+    #game-wrapper {
+      position: relative;
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    /* ── webcam feed (small, left) ── */
+    #webcam-container {
+      position: relative;
+      width: 220px;
+      border: 2px solid #00e5ff44;
+      border-radius: 12px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    #webcam {
+      width: 220px;
+      height: 165px;
+      object-fit: cover;
+      display: block;
+      transform: scaleX(-1); /* mirror */
+    }
+
+    #skeleton-overlay {
+      position: absolute;
+      inset: 0;
+      transform: scaleX(-1);
+    }
+
+    #webcam-label {
+      position: absolute;
+      bottom: 4px;
+      left: 0; right: 0;
+      text-align: center;
+      font-size: 0.65rem;
+      color: #00e5ffaa;
+      pointer-events: none;
+    }
+
+    /* ── main game canvas ── */
+    #game-canvas {
+      border: 2px solid #ffffff18;
+      border-radius: 12px;
+      display: block;
+      background: #0d0d1a;
+    }
+
+    /* ── HUD ── */
+    #hud {
+      display: flex;
+      gap: 32px;
+      margin-bottom: 10px;
+    }
+
+    .hud-item {
+      text-align: center;
+    }
+
+    .hud-label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #ffffff55;
+    }
+
+    .hud-value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    #lives-display span { color: #ff4444; }
+
+    /* ── overlay screens ── */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #0a0a0fcc;
+      border-radius: 12px;
+      gap: 16px;
+      z-index: 10;
+    }
+
+    .overlay h2 {
+      font-size: 2rem;
+      letter-spacing: 0.15em;
+    }
+
+    .overlay p {
+      color: #ffffffaa;
+      font-size: 0.9rem;
+      text-align: center;
+      max-width: 300px;
+      line-height: 1.5;
+    }
+
+    button {
+      padding: 10px 28px;
+      border: 2px solid #00e5ff;
+      border-radius: 8px;
+      background: transparent;
+      color: #00e5ff;
+      font-size: 1rem;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    button:hover {
+      background: #00e5ff;
+      color: #000;
+    }
+
+    #status-bar {
+      font-size: 0.72rem;
+      color: #ffffff55;
+      margin-top: 6px;
+      height: 16px;
+    }
+
+    .hit-flash {
+      animation: flash 0.25s ease-out;
+    }
+
+    @keyframes flash {
+      0%   { border-color: #ff0000cc; box-shadow: 0 0 30px #ff000088; }
+      100% { border-color: #ffffff18; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+
+<h1>⚡ Shoulder Dodge</h1>
+
+<div id="hud">
+  <div class="hud-item">
+    <div class="hud-label">Score</div>
+    <div class="hud-value" id="score-display">0</div>
+  </div>
+  <div class="hud-item">
+    <div class="hud-label">Lives</div>
+    <div class="hud-value" id="lives-display">❤️❤️❤️</div>
+  </div>
+  <div class="hud-item">
+    <div class="hud-label">Level</div>
+    <div class="hud-value" id="level-display">1</div>
+  </div>
+</div>
+
+<div id="game-wrapper">
+
+  <!-- Webcam feed -->
+  <div id="webcam-container">
+    <video id="webcam" autoplay muted playsinline></video>
+    <canvas id="skeleton-overlay"></canvas>
+    <div id="webcam-label">📷 Pose Camera</div>
+  </div>
+
+  <!-- Game canvas -->
+  <div style="position:relative;">
+    <canvas id="game-canvas" width="560" height="480"></canvas>
+
+    <!-- Start screen -->
+    <div class="overlay" id="start-screen">
+      <h2 style="color:#00e5ff;">SHOULDER DODGE</h2>
+      <p>Use your <strong>left & right shoulders</strong> to dodge incoming bullets.<br>
+         Allow camera access and click Start when ready.</p>
+      <button id="start-btn">▶ START</button>
+      <p id="cam-status" style="font-size:0.75rem;color:#ffcc44;">Initializing camera…</p>
+    </div>
+
+    <!-- Game over screen -->
+    <div class="overlay" id="gameover-screen" style="display:none;">
+      <h2 style="color:#ff4444;">GAME OVER</h2>
+      <p id="final-score-text">Your score: 0</p>
+      <button id="restart-btn">↺ PLAY AGAIN</button>
+    </div>
+  </div>
+</div>
+
+<div id="status-bar">Loading TensorFlow.js &amp; MoveNet…</div>
+
+<!-- TF.js + Pose Detection -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+
+<script>
+// ─────────────────────────────────────────────
+//  CONFIG
+// ─────────────────────────────────────────────
+const CANVAS_W = 560;
+const CANVAS_H = 480;
+const SHOULDER_RADIUS = 22;      // hit zone radius (px in game coords)
+const BULLET_RADIUS   = 9;
+const BASE_INTERVAL   = 1200;    // ms between bullets at level 1
+const SPEED_BASE      = 4;       // bullet px/frame at level 1
+const LIVES_MAX       = 3;
+
+// MoveNet keypoint indices
+const KP_LEFT_SHOULDER  = 5;
+const KP_RIGHT_SHOULDER = 6;
+
+// ─────────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────────
+let detector = null;
+let animId   = null;
+let gameRunning = false;
+let score    = 0;
+let lives    = LIVES_MAX;
+let level    = 1;
+let bullets  = [];
+let spawnTimer = null;
+let lastLevelUp = 0;       // score threshold for last level-up
+let poseData = { left: null, right: null }; // game-canvas coords
+
+// ─────────────────────────────────────────────
+//  DOM refs
+// ─────────────────────────────────────────────
+const webcam      = document.getElementById('webcam');
+const skelCanvas  = document.getElementById('skeleton-overlay');
+const skelCtx     = skelCanvas.getContext('2d');
+const gameCanvas  = document.getElementById('game-canvas');
+const ctx         = gameCanvas.getContext('2d');
+const scoreEl     = document.getElementById('score-display');
+const livesEl     = document.getElementById('lives-display');
+const levelEl     = document.getElementById('level-display');
+const statusBar   = document.getElementById('status-bar');
+const startScreen = document.getElementById('start-screen');
+const gameoverScr = document.getElementById('gameover-screen');
+const camStatus   = document.getElementById('cam-status');
+const startBtn    = document.getElementById('start-btn');
+const restartBtn  = document.getElementById('restart-btn');
+const wrapper     = document.getElementById('game-wrapper');
+
+// ─────────────────────────────────────────────
+//  CAMERA + MODEL INIT
+// ─────────────────────────────────────────────
+async function initCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' },
+      audio: false
+    });
+    webcam.srcObject = stream;
+    await new Promise(r => webcam.addEventListener('loadeddata', r));
+    skelCanvas.width  = webcam.videoWidth;
+    skelCanvas.height = webcam.videoHeight;
+    camStatus.textContent = '✅ Camera ready';
+    camStatus.style.color = '#00ff88';
+    return true;
+  } catch (e) {
+    camStatus.textContent = '❌ Camera error: ' + e.message;
+    camStatus.style.color = '#ff4444';
+    return false;
+  }
+}
+
+async function initModel() {
+  statusBar.textContent = 'Loading MoveNet (Lightning)…';
+  detector = await poseDetection.createDetector(
+    poseDetection.SupportedModels.MoveNet,
+    { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+  );
+  statusBar.textContent = 'Model ready ✔';
+}
+
+// ─────────────────────────────────────────────
+//  POSE DETECTION LOOP (runs independently)
+// ─────────────────────────────────────────────
+async function poseLoop() {
+  if (!detector || webcam.readyState < 2) {
+    requestAnimationFrame(poseLoop);
+    return;
+  }
+
+  const poses = await detector.estimatePoses(webcam);
+
+  // Clear skeleton overlay
+  skelCtx.clearRect(0, 0, skelCanvas.width, skelCanvas.height);
+
+  if (poses.length > 0) {
+    const kps = poses[0].keypoints;
+    const lKP = kps[KP_LEFT_SHOULDER];
+    const rKP = kps[KP_RIGHT_SHOULDER];
+
+    const VW = webcam.videoWidth  || 640;
+    const VH = webcam.videoHeight || 480;
+
+    // Map webcam coords → game canvas coords
+    // Webcam is mirrored, so flip X
+    function mapX(x) { return ((VW - x) / VW) * CANVAS_W; }
+    function mapY(y) { return (y / VH) * CANVAS_H; }
+
+    if (lKP && lKP.score > 0.25) {
+      poseData.left = { x: mapX(lKP.x), y: mapY(lKP.y) };
+      drawSkelDot(skelCtx, lKP.x, lKP.y, '#00ff88', 'L');
+    }
+    if (rKP && rKP.score > 0.25) {
+      poseData.right = { x: mapX(rKP.x), y: mapY(rKP.y) };
+      drawSkelDot(skelCtx, rKP.x, rKP.y, '#ff4488', 'R');
+    }
+
+    // Draw line between shoulders on skeleton
+    if (lKP?.score > 0.25 && rKP?.score > 0.25) {
+      skelCtx.beginPath();
+      skelCtx.moveTo(lKP.x, lKP.y);
+      skelCtx.lineTo(rKP.x, rKP.y);
+      skelCtx.strokeStyle = '#ffffff44';
+      skelCtx.lineWidth = 2;
+      skelCtx.stroke();
+    }
+  }
+
+  requestAnimationFrame(poseLoop);
+}
+
+function drawSkelDot(ctx2, x, y, color, label) {
+  ctx2.beginPath();
+  ctx2.arc(x, y, 8, 0, Math.PI * 2);
+  ctx2.fillStyle = color + 'cc';
+  ctx2.fill();
+  ctx2.strokeStyle = '#fff';
+  ctx2.lineWidth = 1.5;
+  ctx2.stroke();
+  ctx2.fillStyle = '#fff';
+  ctx2.font = 'bold 10px sans-serif';
+  ctx2.textAlign = 'center';
+  ctx2.fillText(label, x, y + 4);
+}
+
+// ─────────────────────────────────────────────
+//  GAME LOGIC
+// ─────────────────────────────────────────────
+function getBulletSpeed() { return SPEED_BASE + (level - 1) * 0.8; }
+function getBulletInterval() { return Math.max(300, BASE_INTERVAL - (level - 1) * 120); }
+
+function spawnBullet() {
+  if (!gameRunning) return;
+
+  const side = Math.random();
+  let x, y, vx, vy;
+
+  if (side < 0.7) {
+    // From top — random X
+    x  = Math.random() * (CANVAS_W - 40) + 20;
+    y  = -BULLET_RADIUS;
+    vx = (Math.random() - 0.5) * 1.5;
+    vy = getBulletSpeed();
+  } else if (side < 0.85) {
+    // From left
+    x  = -BULLET_RADIUS;
+    y  = Math.random() * CANVAS_H * 0.7 + 80;
+    vx = getBulletSpeed();
+    vy = (Math.random() - 0.5) * 2;
+  } else {
+    // From right
+    x  = CANVAS_W + BULLET_RADIUS;
+    y  = Math.random() * CANVAS_H * 0.7 + 80;
+    vx = -getBulletSpeed();
+    vy = (Math.random() - 0.5) * 2;
+  }
+
+  // Hue cycles with level
+  const hue = (Date.now() / 20 + level * 30) % 360;
+  bullets.push({ x, y, vx, vy, hue, trail: [] });
+
+  // Schedule next
+  spawnTimer = setTimeout(spawnBullet, getBulletInterval());
+}
+
+function checkHit(shoulder) {
+  if (!shoulder) return false;
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    const dx = b.x - shoulder.x;
+    const dy = b.y - shoulder.y;
+    if (Math.sqrt(dx*dx + dy*dy) < SHOULDER_RADIUS + BULLET_RADIUS) {
+      bullets.splice(i, 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+function loseLife() {
+  lives--;
+  updateHUD();
+  playHitSound();
+  setViolinIntensity(lives);
+  // Flash border
+  gameCanvas.classList.add('hit-flash');
+  setTimeout(() => gameCanvas.classList.remove('hit-flash'), 260);
+  if (lives <= 0) endGame();
+}
+
+function updateHUD() {
+  scoreEl.textContent = score;
+  livesEl.textContent = '❤️'.repeat(Math.max(0, lives));
+  levelEl.textContent = level;
+}
+
+function checkLevelUp() {
+  const newLevel = Math.floor(score / 200) + 1;
+  if (newLevel > level) {
+    level = newLevel;
+    updateHUD();
+    playLevelUpSound();
+    statusBar.textContent = `⬆️ Level ${level}! Bullets faster…`;
+    setTimeout(() => { statusBar.textContent = ''; }, 1500);
+  }
+}
+
+// ─────────────────────────────────────────────
+//  DRAW
+// ─────────────────────────────────────────────
+function drawBackground() {
+  ctx.fillStyle = '#0d0d1a';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // Subtle grid
+  ctx.strokeStyle = '#ffffff08';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < CANVAS_W; x += 40) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CANVAS_H); ctx.stroke();
+  }
+  for (let y = 0; y < CANVAS_H; y += 40) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CANVAS_W, y); ctx.stroke();
+  }
+}
+
+function drawShoulders() {
+  const shoulders = [
+    { pos: poseData.left,  color: '#00ff88', label: 'LEFT' },
+    { pos: poseData.right, color: '#ff4488', label: 'RIGHT' }
+  ];
+
+  for (const { pos, color, label } of shoulders) {
+    if (!pos) {
+      // Show ghost if not detected
+      ctx.beginPath();
+      ctx.arc(
+        label === 'LEFT' ? CANVAS_W * 0.35 : CANVAS_W * 0.65,
+        CANVAS_H * 0.65,
+        SHOULDER_RADIUS, 0, Math.PI * 2
+      );
+      ctx.strokeStyle = '#ffffff22';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      continue;
+    }
+
+    // Glow
+    const grad = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, SHOULDER_RADIUS * 2);
+    grad.addColorStop(0, color + 'aa');
+    grad.addColorStop(1, color + '00');
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, SHOULDER_RADIUS * 2, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Main dot
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, SHOULDER_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = color + 'dd';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, pos.x, pos.y + 4);
+
+    // Hit zone ring
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, SHOULDER_RADIUS + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = color + '44';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Draw body line between shoulders
+  if (poseData.left && poseData.right) {
+    ctx.beginPath();
+    ctx.moveTo(poseData.left.x, poseData.left.y);
+    ctx.lineTo(poseData.right.x, poseData.right.y);
+    ctx.strokeStyle = '#ffffff33';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+}
+
+function drawBullets() {
+  const now = performance.now();
+  for (const b of bullets) {
+    // Trail
+    for (let i = 0; i < b.trail.length; i++) {
+      const t = b.trail[i];
+      const alpha = (i / b.trail.length) * 0.4;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, BULLET_RADIUS * (i / b.trail.length), 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${b.hue},100%,60%,${alpha})`;
+      ctx.fill();
+    }
+
+    // Core
+    const grad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, BULLET_RADIUS * 1.8);
+    grad.addColorStop(0, `hsl(${b.hue},100%,90%)`);
+    grad.addColorStop(0.5, `hsl(${b.hue},100%,60%)`);
+    grad.addColorStop(1, `hsla(${b.hue},100%,40%,0)`);
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, BULLET_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Outer ring pulse
+    const pulse = 0.7 + 0.3 * Math.sin(now / 120 + b.x);
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, BULLET_RADIUS * pulse + 3, 0, Math.PI * 2);
+    ctx.strokeStyle = `hsla(${b.hue},100%,70%,0.5)`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+function drawNoPoseWarning() {
+  if (!poseData.left && !poseData.right) {
+    ctx.fillStyle = '#ffcc44cc';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('⚠ No pose detected — move into frame', CANVAS_W / 2, 28);
+  }
+}
+
+// ─────────────────────────────────────────────
+//  GAME LOOP
+// ─────────────────────────────────────────────
+let lastTime = 0;
+
+function gameLoop(ts) {
+  if (!gameRunning) return;
+  animId = requestAnimationFrame(gameLoop);
+
+  const dt = ts - lastTime;
+  lastTime = ts;
+
+  // Update bullets
+  for (const b of bullets) {
+    b.trail.push({ x: b.x, y: b.y });
+    if (b.trail.length > 8) b.trail.shift();
+    b.x += b.vx;
+    b.y += b.vy;
+  }
+
+  // Remove off-screen bullets (award points)
+  const prev = bullets.length;
+  bullets = bullets.filter(b =>
+    b.x > -60 && b.x < CANVAS_W + 60 && b.y < CANVAS_H + 60
+  );
+  const dodged = prev - bullets.length;
+  if (dodged > 0) {
+    score += dodged * 10;
+    updateHUD();
+    checkLevelUp();
+  }
+
+  // Collision
+  let hitL = checkHit(poseData.left);
+  let hitR = checkHit(poseData.right);
+  if (hitL || hitR) loseLife();
+
+  // Draw
+  drawBackground();
+  drawShoulders();
+  drawBullets();
+  drawNoPoseWarning();
+}
+
+// ─────────────────────────────────────────────
+//  GAME CONTROL
+// ─────────────────────────────────────────────
+function startGame() {
+  score   = 0;
+  lives   = LIVES_MAX;
+  level   = 1;
+  bullets = [];
+  poseData = { left: null, right: null };
+  lastTime = performance.now();
+
+  // Audio — init on first user gesture, reset violin
+  initAudio();
+  stopViolin();
+  violinGain.gain.value = VIOLIN_VOLUMES[LIVES_MAX];
+  startViolin();
+
+  updateHUD();
+  startScreen.style.display  = 'none';
+  gameoverScr.style.display  = 'none';
+  gameRunning = true;
+
+  spawnBullet();
+  animId = requestAnimationFrame(gameLoop);
+}
+
+function endGame() {
+  gameRunning = false;
+  cancelAnimationFrame(animId);
+  clearTimeout(spawnTimer);
+  playMarioGameOver();   // stops violin + plays jingle
+
+  document.getElementById('final-score-text').textContent =
+    `Your score: ${score}  |  Level reached: ${level}`;
+  gameoverScr.style.display = 'flex';
+}
+
+// ─────────────────────────────────────────────
+//  AUDIO ENGINE
+// ─────────────────────────────────────────────
+let audioCtx     = null;
+let masterGain   = null;
+let violinGain   = null;
+let violinTimer  = null;
+
+// Volume curve: index = lives remaining (0-3)
+const VIOLIN_VOLUMES = [0, 0.9, 0.45, 0.1];
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.75;
+  masterGain.connect(audioCtx.destination);
+
+  violinGain = audioCtx.createGain();
+  violinGain.gain.value = VIOLIN_VOLUMES[LIVES_MAX];
+  violinGain.connect(masterGain);
+}
+
+/* ── Synthesised violin note (sawtooth + lowpass + vibrato LFO) ── */
+function playViolin(freq, startT, dur, vel = 0.28) {
+  if (!audioCtx) return;
+
+  const osc    = audioCtx.createOscillator();
+  const filter = audioCtx.createBiquadFilter();
+  const env    = audioCtx.createGain();
+  const lfo    = audioCtx.createOscillator();
+  const lfoAmt = audioCtx.createGain();
+
+  // Vibrato
+  lfo.type            = 'sine';
+  lfo.frequency.value = 5.2;
+  lfoAmt.gain.value   = freq * 0.012;   // ~1.2% depth
+  lfo.connect(lfoAmt);
+  lfoAmt.connect(osc.frequency);
+
+  // Sawtooth → warm lowpass = string timbre
+  osc.type            = 'sawtooth';
+  osc.frequency.value = freq;
+  filter.type         = 'lowpass';
+  filter.frequency.value = 1400 + freq * 0.6;
+  filter.Q.value      = 0.8;
+
+  // ADSR
+  const atk = 0.07, rel = 0.13;
+  env.gain.setValueAtTime(0, startT);
+  env.gain.linearRampToValueAtTime(vel, startT + atk);
+  env.gain.setValueAtTime(vel, startT + dur - rel);
+  env.gain.linearRampToValueAtTime(0, startT + dur);
+
+  osc.connect(filter);
+  filter.connect(env);
+  env.connect(violinGain);
+
+  const end = startT + dur + 0.15;
+  lfo.start(startT);  osc.start(startT);
+  lfo.stop(end);      osc.stop(end);
+}
+
+/* ── Looping violin tune — 4-phrase action melody in A minor ── */
+const MELODY = [
+  // ▸ PHRASE 1 — Driving, repeated-note attack (Hungarian Dance feel)
+  [440, 0.18], [440, 0.18], [440, 0.18],       // A4 A4 A4  (short staccato)
+  [523, 0.36], [494, 0.36],                     // C5  B4
+  [440, 0.36], [392, 0.18], [415, 0.18],        // A4  G4  Ab4
+  [440, 0.72],                                  // A4  (held)
+
+  [523, 0.18], [523, 0.18], [523, 0.18],       // C5  C5  C5
+  [587, 0.36], [554, 0.36],                     // D5  C#5
+  [523, 0.36], [494, 0.18], [466, 0.18],        // C5  B4  Bb4
+  [440, 0.72],                                  // A4  (held)
+
+  // ▸ PHRASE 2 — Lyrical sweep up and down
+  [523, 0.54], [587, 0.36], [659, 0.36],        // C5  D5  E5
+  [698, 0.54], [659, 0.36], [587, 0.36],        // F5  E5  D5
+  [523, 0.54], [494, 0.36], [440, 0.36],        // C5  B4  A4
+  [392, 1.08],                                  // G4  (long breath)
+
+  // ▸ PHRASE 3 — Descending chromatic tension run
+  [523, 0.20], [508, 0.20], [494, 0.20],        // C5  B4♭ B4
+  [466, 0.20], [440, 0.20], [415, 0.20],        // Bb4 A4  Ab4
+  [392, 0.20], [370, 0.20], [349, 0.20],        // G4  F#4 F4
+  [330, 0.72],                                  // E4  (held)
+
+  // ▸ PHRASE 4 — Resolution & lift back to top
+  [330, 0.36], [370, 0.36],                     // E4  F#4
+  [392, 0.36], [440, 0.36],                     // G4  A4
+  [494, 0.36], [523, 0.36],                     // B4  C5
+  [587, 0.54], [523, 0.36],                     // D5  C5
+  [440, 1.44],                                  // A4  (long — seamless loop back)
+];
+const BEAT_S = 0.32;   // seconds per "beat unit" — ~188 BPM feel
+let melodyIdx = 0;
+let nextNoteT = 0;
+let violinActive = false;
+
+function scheduleMelody() {
+  // Stops only when stopViolin() has been called (violinActive = false)
+  if (!audioCtx || !violinActive) return;
+  const LOOKAHEAD = 0.30;
+  while (nextNoteT < audioCtx.currentTime + LOOKAHEAD) {
+    const [hz, beats] = MELODY[melodyIdx % MELODY.length];
+    playViolin(hz, nextNoteT, beats * 0.88);    // 88% legato
+    nextNoteT += beats;
+    melodyIdx++;
+  }
+  violinTimer = setTimeout(scheduleMelody, 60);
+}
+
+function startViolin() {
+  violinActive = true;
+  melodyIdx    = 0;
+  nextNoteT    = audioCtx.currentTime + 0.05;
+  scheduleMelody();
+}
+
+function stopViolin() {
+  violinActive = false;
+  clearTimeout(violinTimer);
+  violinTimer = null;
+}
+
+/* Ramp violin volume when a life is lost */
+function setViolinIntensity(livesLeft) {
+  if (!violinGain) return;
+  const vol = VIOLIN_VOLUMES[Math.max(0, Math.min(livesLeft, 3))];
+  violinGain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.4);
+}
+
+/* ── Hit impact sound ── */
+function playHitSound() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  // Low rumble drop
+  const osc = audioCtx.createOscillator();
+  const g   = audioCtx.createGain();
+  osc.type  = 'sawtooth';
+  osc.frequency.setValueAtTime(220, t);
+  osc.frequency.exponentialRampToValueAtTime(55, t + 0.35);
+  g.gain.setValueAtTime(0.5, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+  osc.connect(g); g.connect(masterGain);
+  osc.start(t); osc.stop(t + 0.4);
+
+  // High crack
+  const noise = audioCtx.createOscillator();
+  const ng    = audioCtx.createGain();
+  noise.type  = 'square';
+  noise.frequency.value = 880;
+  ng.gain.setValueAtTime(0.3, t);
+  ng.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+  noise.connect(ng); ng.connect(masterGain);
+  noise.start(t); noise.stop(t + 0.1);
+}
+
+/* ── Level-up arpeggio (triangle wave) ── */
+function playLevelUpSound() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  [523, 659, 784, 1047].forEach((f, i) => {
+    const osc = audioCtx.createOscillator();
+    const g   = audioCtx.createGain();
+    osc.type  = 'triangle';
+    osc.frequency.value = f;
+    const s = t + i * 0.11;
+    g.gain.setValueAtTime(0, s);
+    g.gain.linearRampToValueAtTime(0.35, s + 0.04);
+    g.gain.linearRampToValueAtTime(0, s + 0.14);
+    osc.connect(g); g.connect(masterGain);
+    osc.start(s); osc.stop(s + 0.18);
+  });
+}
+
+/* ── Mario Game Over jingle (square wave, 8-bit) ── */
+function playMarioGameOver() {
+  if (!audioCtx) return;
+  stopViolin();
+  violinGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+
+  const t = audioCtx.currentTime + 0.15;
+
+  function sq(freq, start, dur, vol = 0.38) {
+    const osc = audioCtx.createOscillator();
+    const g   = audioCtx.createGain();
+    osc.type  = 'square';
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(vol, start);
+    g.gain.setValueAtTime(vol, start + dur - 0.015);
+    g.gain.linearRampToValueAtTime(0, start + dur);
+    osc.connect(g); g.connect(masterGain);
+    osc.start(start); osc.stop(start + dur + 0.02);
+  }
+
+  // ── Classic SMB Game Over ──────────────────────
+  // Opening: three staccato downward notes
+  sq(494,    t + 0.00, 0.14);   // B4
+  sq(370,    t + 0.18, 0.14);   // F#4
+  sq(294,    t + 0.36, 0.85);   // D4  (long)
+  // Chromatic descending run
+  sq(415.30, t + 1.40, 0.13);   // Ab4
+  sq(392.00, t + 1.55, 0.13);   // G4
+  sq(369.99, t + 1.70, 0.13);   // F#4
+  sq(349.23, t + 1.85, 0.13);   // F4
+  sq(329.63, t + 2.00, 0.13);   // E4
+  sq(311.13, t + 2.15, 0.13);   // Eb4
+  sq(293.66, t + 2.30, 0.13);   // D4
+  sq(277.18, t + 2.45, 0.13);   // C#4
+  // Final deep resolution note
+  sq(246.94, t + 2.70, 1.60);   // B3
+}
+
+// ─────────────────────────────────────────────
+//  BUTTONS
+// ─────────────────────────────────────────────
+startBtn.addEventListener('click', () => {
+  if (!detector) { camStatus.textContent = 'Model still loading, please wait…'; return; }
+  startGame();
+});
+
+restartBtn.addEventListener('click', startGame);
+
+// ─────────────────────────────────────────────
+//  BOOT
+// ─────────────────────────────────────────────
+(async () => {
+  await initCamera();
+  await initModel();
+  startBtn.disabled = false;
+  poseLoop();          // always-on pose detection
+})();
+</script>
+</body>
+</html>
+
